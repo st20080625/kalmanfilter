@@ -1,0 +1,5 @@
+estimate: 推定
+predict: 予測
+measurement: 測定
+observation: 観測
+transition: 遷移
