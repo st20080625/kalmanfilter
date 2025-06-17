@@ -2,6 +2,7 @@
 #include "3d.hpp"
 #include "kalmanfilter.hpp"
 #include <cmath>
+#include <random>
 
 // invがcpp3dで4*4行列までにしか対応していないため,拡張が必要. 今度やる
 namespace kalmanfilter{
@@ -11,14 +12,21 @@ namespace kalmanfilter{
     // 予測ステップ
     // 状態遷移関数
     matrix state_transition(const matrix &prev_state, const matrix &control_input, float dt) {
-        // 状態遷移関数の実装
-        // ここでは単純なモデルを使用
-        float v = control_input.data[0][0]; // 速度
-        float omega = control_input.data[1][0]; // 角速度
+        float v = control_input.data[0][0];
+        float omega = control_input.data[1][0];
+        
+        // プロセスノイズを生成（毎回異なる値）
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        static std::normal_distribution<float> noise_x(0, 0.5f);  // 標準偏差は調整可能
+        static std::normal_distribution<float> noise_y(0, 0.5f);
+        static std::normal_distribution<float> noise_theta(0, 0.05f);
+        
+        // ノイズを加えた状態遷移
         return matrix(vector<vector<float>>{
-            {prev_state.data[0][0] + v * dt * cosf(prev_state.data[2][0] * M_PI / 180.0f)},
-            {prev_state.data[1][0] + v * dt * sinf(prev_state.data[2][0] * M_PI / 180.0f)},
-            {prev_state.data[2][0] + omega * dt}
+            {prev_state.data[0][0] + v * dt * cosf(prev_state.data[2][0]) + noise_x(gen)},
+            {prev_state.data[1][0] + v * dt * sinf(prev_state.data[2][0]) + noise_y(gen)},
+            {prev_state.data[2][0] + omega * dt + noise_theta(gen)}
         });
 
     }
@@ -65,8 +73,8 @@ namespace kalmanfilter{
         float v = control_input.data[0][0];
         float omega = control_input.data[1][0];
         return matrix(vector<vector<float>>{
-            {1, 0, -v * dt * sinf(prev_state.data[2][0] * M_PI / 180.0f)},
-            {0, 1, v * dt * cosf(prev_state.data[2][0] * M_PI / 180.0f)},
+            {1, 0, -v * dt * sinf(prev_state.data[2][0])},
+            {0, 1, v * dt * cosf(prev_state.data[2][0])},
             {0, 0, 1}
         });
     }

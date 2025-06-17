@@ -23,6 +23,7 @@ void draw_car(SDL_Renderer *renderer, vec2d a, vec2d size, vec3d color)
 	draw::Draw_Line(renderer, cpp3d::vec2d(a.x - size.x / 2, a.y - size.y), cpp3d::vec2d(a.x + size.x / 2, a.y - size.y), color);
 }
 
+// 内部計算はすべて弧度法で行う キー入力で0.5piずつ回転
 int main()
 {
 	std::system("cls");
@@ -69,13 +70,13 @@ int main()
 	cpp3d::matrix covariance_estimate = cpp3d::matrix(vector<vector<float>>{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}); // 初期値は単位行列
 
 	// プロセスノイズ
-	cpp3d::matrix process_noise = cpp3d::matrix(vector<vector<float>>{{0.05f, 0, 0}, {0, 0.05f, 0}, {0, 0, 0.05f}}); // 0で初期化(初期状態が完全に信じられるならば)
+	cpp3d::matrix process_noise = cpp3d::matrix(vector<vector<float>>{{0.1f, 0, 0}, {0, 0.1f, 0}, {0, 0, 0.01f}}); // 0で初期化(初期状態が完全に信じられるならば)
 
 	// カルマンゲイン
 	cpp3d::matrix kalman_gain = cpp3d::matrix(vector<vector<float>>{{0, 0}, {0, 0}, {0, 0}});
 
 	// 観測ノイズ
-	cpp3d::matrix measurement_noise = cpp3d::matrix(vector<vector<float>>{{0.01f, 0}, {0, 0.01f}}); // 0で初期化(センサの精度によって変更必須)
+	cpp3d::matrix measurement_noise = cpp3d::matrix(vector<vector<float>>{{100.0f, 0}, {0, 100.0f}}); // 0で初期化(センサの精度によって変更必須)
 
 	// 観測間隔
 	float dt = 0.1f;
@@ -100,8 +101,8 @@ int main()
 	
 	std::random_device rd;
 	std::mt19937 gen(rd());
-	std::normal_distribution<float> noise_x(0.0f, 1.0f); // x座標のノイズ
-	std::normal_distribution<float> noise_y(0.0f, 1.0f); // y座標のノイズ
+	std::normal_distribution<float> noise_x(0.0f, 10.0f); // x座標のノイズ
+	std::normal_distribution<float> noise_y(0.0f, 10.0f); // y座標のノイズ
 
 	while (true)
 	{
@@ -122,11 +123,11 @@ int main()
 		angle_velocity_real = 0.0f;
 		if (GetAsyncKeyState('Q') & 0x8000)
 		{
-			angle_velocity_real -= 20;
+			angle_velocity_real -= 0.5f * M_PI;
 		}
 		if (GetAsyncKeyState('E') & 0x8000)
 		{
-			angle_velocity_real += 20;
+			angle_velocity_real += 0.5f * M_PI;
 		}
 
 		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -136,8 +137,8 @@ int main()
 		draw::Draw_Line(renderer, vec2d(window_w / 2, 0), vec2d(window_w / 2, window_h), vec3d(255, 255, 255));
 
 		cpp3d::matrix rotation_matrix_real = cpp3d::matrix(vector<vector<float>>{
-			{static_cast<float>(cos(angle_real * M_PI / 180.0f)), static_cast<float>(-sin(angle_real * M_PI / 180.0f))},
-			{static_cast<float>(sin(angle_real * M_PI / 180.0f)), static_cast<float>(cos(angle_real * M_PI / 180.0f))}
+			{static_cast<float>(cos(angle_real)), static_cast<float>(-sin(angle_real))},
+			{static_cast<float>(sin(angle_real)), static_cast<float>(cos(angle_real))}
 		});
 		angle_real += angle_velocity_real * dt;
 
@@ -197,8 +198,8 @@ int main()
 		angle_estimate = state_estimate.data[2][0];
 		angle_velocity_estimate = control_input.data[1][0];
 		cpp3d::matrix rotation_matrix_estimate = cpp3d::matrix(vector<vector<float>>{
-			{static_cast<float>(cos(angle_estimate * M_PI / 180.0f)), static_cast<float>(-sin(angle_estimate * M_PI / 180.0f))},
-			{static_cast<float>(sin(angle_estimate * M_PI / 180.0f)), static_cast<float>(cos(angle_estimate * M_PI / 180.0f))}
+			{static_cast<float>(cos(angle_estimate)), static_cast<float>(-sin(angle_estimate))},
+			{static_cast<float>(sin(angle_estimate)), static_cast<float>(cos(angle_estimate))}
 		});
 		cpp3d::vec2d rotated_x_base_estimate = cpp3d::matrix_to_vec2d(rotation_matrix_estimate.mul(cpp3d::vec2d_to_matrix(pos_base_x_real)));
 		cpp3d::vec2d rotated_y_base_estimate = cpp3d::matrix_to_vec2d(rotation_matrix_estimate.mul(cpp3d::vec2d_to_matrix(pos_base_y_real)));
@@ -219,16 +220,34 @@ int main()
 		draw::Draw_Line(renderer, pos_estimate_display, pos_estimate_display - rotated_y_base_estimate.scalar(size.y / 2), cpp3d::vec3d(0, 255, 0));
 		draw::Draw_Circle(renderer, pos_estimate_display, 10, cpp3d::vec3d(0, 255, 255));
 
-		std::cout << "\033[6A";
+		// measurement visualization
+		cpp3d::vec2d pos_observed(measurement.data[0][0], measurement.data[1][0]);
+
+		draw::Draw_Circle(renderer, pos_observed + window_center, 10, cpp3d::vec3d(255, 141, 161));
+
+		cpp3d::vec2d obs_base_x(cosf(angle_real), sinf(angle_real));
+		cpp3d::vec2d obs_base_y(-sinf(angle_real), cosf(angle_real));
+
+		draw::Draw_Line(renderer, pos_observed + window_center, 
+						pos_observed + window_center + obs_base_x.scalar(size.x / 2), 
+						cpp3d::vec3d(0, 0, 255));
+		draw::Draw_Line(renderer, pos_observed + window_center, 
+						pos_observed + window_center + obs_base_y.scalar(size.y / 2), 
+						cpp3d::vec3d(0, 128, 255));
+
+		std::cout << "\033[7A";
+		// Real values
 		std::cout << "Real Position: " << pos_real.x << "," << pos_real.y << "\033[K\n" << std::flush;
         std::cout << "Real Velocity: " << control_input.data[0][0] << "\033[K\n" << std::flush;
-        std::cout << "Real Theta: " << angle_real << "," << "Real Angle Velocity: " << angle_velocity_real << "\033[K\n" << std::flush;
-		// Extended Kalman Filter estimate
+        std::cout << "Real Theta: " << angle_real * M_PI / 180.0f << "," << "Real Angle Velocity: " << angle_velocity_real << "\033[K\n" << std::flush;
+		// Extended Kalman Filter estimate values
 		std::cout << "Estimate Position: " << pos_estimate.x << "," << pos_estimate.y << "\033[K\n" << std::flush;
 		std::cout << "Estimate Velocity: " << control_input.data[0][0] << "\033[K\n" << std::flush;
-		std::cout << "Estimate Theta: " << angle_estimate << "," << "Estimate Angle Velocity" << angle_velocity_estimate <<"\033[K\n" << std::flush;
-		SDL_RenderPresent(renderer);
+		std::cout << "Estimate Theta: " << angle_estimate * M_PI / 180.0f << "," << "Estimate Angle Velocity" << angle_velocity_estimate <<"\033[K\n" << std::flush;
+		// Measurement values
+		std::cout << "Measurement Position: " << pos_observed.x << "," << pos_observed.y << "\033[K\n" << std::flush;
 
+		SDL_RenderPresent(renderer);
 		SDL_Delay(10);
 	}
 
